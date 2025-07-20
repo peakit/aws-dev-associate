@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home Page</title>
+  <link rel="stylesheet" href="style.css">
+  <script>
+    window.onload = function () {
+      readJsonFile("https://cloudx2025-harshitmanaktala-20250720-dr-site.s3.ap-southeast-1.amazonaws.com/quote.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAXRMP4XTPLBXSR6HD%2F20250720%2Fap-southeast-1%2Fs3%2Faws4_request&X-Amz-Date=20250720T170727Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=cd0944026e3f8c15d2e980154e694289d5f2e0df3b3de7c81e83fa2e1386dd35", function (QuoteJson) {
+        let QuoteObj = JSON.parse(QuoteJson);
+        document.getElementById("Quote").innerHTML =
+            "<i>" + QuoteObj.message + "</i>"
+      });
+    }
+
+    function readJsonFile(file, callback) {
+      let rawFile = new XMLHttpRequest();
+      rawFile.overrideMimeType("application/json");
+      rawFile.open("GET", file, true);
+      rawFile.onreadystatechange = function () {
+        if (rawFile.readyState === 4 && rawFile.status === 200) {
+          callback(rawFile.responseText);
+        }
+      }
+      rawFile.send(null);
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Welcome to My Simple Website</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="about.html">About</a>
+      <a href="contactus.html">Contact Us</a>
+    </nav>
+  </header>
+  <main>
+    <section>
+      <h2>Home Page</h2>
+      <p>This is the home page of the website. Enjoy browsing!</p>
+      <div id="Quote" style="margin-top:20px; font-size: 1.2em; color: #444;"></div>
+    </section>
+  </main>
+  <footer>
+    <p>&copy; 2025 My Simple Website</p>
+  </footer>
+</body>
+</html>
