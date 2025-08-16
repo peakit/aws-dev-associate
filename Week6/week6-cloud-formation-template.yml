@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  AWS Infrastructure for cloudx2025 including VPC, Subnets, Route Tables, 
+  Internet Gateway, EC2 Launch Template, AutoScaling Group, and Application Load Balancer.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: "The name of the project used for tagging resources."
+  MyIP:
+    Type: String
+    Description: "Your IP address for SSH access (e.g., 203.0.113.25/32)."
+  AMI:
+    Type: AWS::EC2::Image::Id
+    Description: "Custom AMI ID with pre-installed application."
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    Description: "EC2 instance type for Launch Template."
+
+Resources:
+
+  ### --- S3 Bucket ---
+  ProjectS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-harshitmanaktala-${AWS::StackName}"
+
+  ### --- VPC ---
+  ProjectVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-Network"
+
+  ### --- Internet Gateway + Attachment ---
+  ProjectIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-InternetGateway"
+
+  AttachIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ProjectVPC
+      InternetGatewayId: !Ref ProjectIGW
+
+  ### --- Public Subnet A ---
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ProjectVPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PublicSubnet-A"
+
+  ### --- Public Subnet B ---
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ProjectVPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PublicSubnet-B"
+
+  ### --- Route Table + Internet Route ---
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ProjectVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PublicRouteTable"
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachIGW
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref ProjectIGW
+
+  SubnetAssocA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  SubnetAssocB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  ### --- Security Group for EC2 ---
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref ProjectVPC
+      GroupDescription: "Allow HTTP, HTTPS from all; SSH only from my IP"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-SecGr1"
+
+  SGIngressHTTP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  SGIngressHTTPS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: 0.0.0.0/0
+
+  SGIngressSSH:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: !Ref MyIP
+
+  SGIngressAppPort:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      CidrIp: 0.0.0.0/0
+
+  ### --- EC2 Launch Template ---
+  ProjectLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${ProjectName}-LaunchTemplate"
+      LaunchTemplateData:
+        ImageId: !Ref AMI
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+
+  ### --- Application Load Balancer ---
+  ProjectALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-ALB-${AWS::StackName}"
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-LoadBalancer"
+
+  ProjectTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref ProjectVPC
+      Protocol: HTTP
+      Port: 8080
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-TargetGroup"
+
+  ProjectALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProjectALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProjectTargetGroup
+
+  ### --- AutoScaling Group ---
+  ProjectASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      MinSize: "1"
+      MaxSize: "3"
+      DesiredCapacity: "1"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ProjectLaunchTemplate
+        Version: !GetAtt ProjectLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-AutoScalingGroup"
+          PropagateAtLaunch: true
+      TargetGroupARNs:
+        - !Ref ProjectTargetGroup
+
+  ProjectCPUScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref ProjectASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 50.0
+
+Outputs:
+  S3BucketName:
+    Value: !Ref ProjectS3Bucket
+    Description: "S3 bucket created."
+  VPCId:
+    Value: !Ref ProjectVPC
+    Description: "VPC created."
+  ALBEndpoint:
+    Value: !GetAtt ProjectALB.DNSName
+    Description: "Public DNS of the Application Load Balancer"
