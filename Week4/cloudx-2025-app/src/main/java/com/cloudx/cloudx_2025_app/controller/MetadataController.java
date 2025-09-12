@@ -1,4 +1,4 @@
-package com.cloudx.cloudx_2025_app;
+package com.cloudx.cloudx_2025_app.controller;
 
 import java.util.HashMap;
 import java.util.Map;
