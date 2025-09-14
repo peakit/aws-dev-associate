@@ -25,6 +25,9 @@ public class ImageService {
 	@Autowired
 	private ImageRepository imageRepo;
 	
+	@Autowired
+	private NotificationService notificationService;
+
 	@Value("${cloud.aws.s3.bucket-name}")
 	private String bucketName;
 
@@ -49,7 +52,13 @@ public class ImageService {
 		java.time.LocalDateTime now = java.time.LocalDateTime.now();
 		img.setUploadedAt(now);
 		img.setLastUpdatedAt(now);
-		return imageRepo.save(img);
+		imageRepo.save(img);
+
+		// Build download URL (assuming endpoint is /images/download/{name})
+		String downloadUrl = String.format("/images/download/%s", name);
+		notificationService.sendImageUploadMessage(name, size, ext, downloadUrl);
+
+		return img;
 	}
 
 	public byte[] download(String name) {

@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.cloudx</groupId>
     <artifactId>cloudx-2025-app</artifactId>
-    <version>0.0.2</version>
+    <version>0.0.3</version>
     <name>cloudx-2025-app</name>
     <description>Sample app built while learning cloudx 2025</description>
     <url />
@@ -59,6 +59,16 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
+            <version>2.32.0</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sqs</artifactId>
+            <version>2.32.0</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns</artifactId>
             <version>2.32.0</version>
         </dependency>
         <dependency>

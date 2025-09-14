@@ -1,0 +1,216 @@
+Parameters:
+  ProjectName:
+    Type: String
+  BucketSuffix:
+    Type: String
+    Description: "Suffix for the S3 bucket name"
+  DBUsername:
+    Type: String
+    NoEcho: true
+    Description: "Master username for RDS"
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: "Master password for RDS"
+  DBName:
+    Type: String
+    Default: cloudx2025
+    Description: "Name of the database to create"
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cloudx2025-${BucketSuffix}"
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-VPC"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-IGW"
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PublicSubnet-A"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PublicSubnet-B"
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']  # This will be ap-south-1a
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PrivateSubnetA"
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']  # Changed to index 1 for ap-south-1b
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PrivateSubnetB"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-PublicRT"
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "${ProjectName} RDS subnet group"
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      DBSubnetGroupName: !Sub "${ProjectName}-db-subnet"
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow app traffic from ALB and SSH access"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 103.41.39.253/32
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-AppSecurityGroup"
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow MySQL from app"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  MyDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      PubliclyAccessible: false
+      MultiAZ: true
+      BackupRetentionPeriod: 0  # Disable automated backups
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DeletionProtection: false
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${ProjectName}-VpcId"
+  PublicSubnetAId:
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub "${ProjectName}-PublicSubnetAId"
+  PublicSubnetBId:
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub "${ProjectName}-PublicSubnetBId"
+  PrivateSubnetAId:
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: !Sub "${ProjectName}-PrivateSubnetAId"
+  PrivateSubnetBId:
+    Value: !Ref PrivateSubnetB
+    Export:
+      Name: !Sub "${ProjectName}-PrivateSubnetBId"
+  S3BucketName:
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub "${ProjectName}-S3BucketName"
+  RDSEndpoint:
+    Value: !GetAtt MyDB.Endpoint.Address
+    Export:
+      Name: !Sub "${ProjectName}-RDSEndpoint"
+  RDSInstanceId:
+    Value: !Ref MyDB
+    Export:
+      Name: !Sub "${ProjectName}-RDSInstanceId"
+  RDSUsername:
+    Value: !Ref DBUsername
+    Export:
+      Name: !Sub "${ProjectName}-RDSUsername"
+  AppSecurityGroupId:
+    Value: !Ref AppSecurityGroup
+    Export:
+      Name: !Sub "${ProjectName}-AppSecurityGroupId"
+  RDSDBName:
+    Value: !Ref DBName
+    Export:
+      Name: !Sub "${ProjectName}-RDSDBName"
