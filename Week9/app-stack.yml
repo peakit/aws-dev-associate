@@ -1,0 +1,393 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Application stack with Lambda functions
+
+Parameters:
+  ProjectName:
+    Type: String
+  DeploymentBucket:
+    Type: String
+    Description: "S3 bucket name containing deployment artifacts (JAR, Lambda code, layers)"
+  AppJarKey:
+    Type: String
+    Description: "S3 key for the application JAR file"
+  UploadsNotificationCodeKey:
+    Type: String
+    Default: "uploads_notification.zip"
+    Description: "S3 key for the Uploads Notification Lambda function code"
+  DataConsistencyCodeKey:
+    Type: String
+    Default: "data_consistency.zip"
+    Description: "S3 key for the Data Consistency Lambda function code"
+  LayerKey:
+    Type: String
+    Description: "S3 key for the Lambda layer zip file"
+  RDSHost:
+    Type: String
+    Description: "RDS endpoint from network stack"
+  DBUsername:
+    Type: String
+    Description: "Database username"
+    NoEcho: true
+  DBPassword:
+    Type: String
+    Description: "Database password"
+    NoEcho: true
+  S3BucketName:
+    Type: String
+    Description: "S3 bucket name from network stack"
+  DBName:
+    Type: String
+    Description: "Database name from network stack"
+
+Resources:
+  AppSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId:
+        Fn::ImportValue: !Sub "${ProjectName}-AppSecurityGroupId"
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for ALB"
+      VpcId:
+        Fn::ImportValue: !Sub "${ProjectName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-ALBSecurityGroup"
+
+  AppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: ami-0b982602dbb32c5bd
+        InstanceType: t3.micro
+        KeyName: cloudx_ec2_keypair
+        IamInstanceProfile:
+          Name: cloudx2025_FullAccessRoleS3
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${ProjectName}-AppSecurityGroupId"
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum install -y aws-cli
+
+            # Install Java 17
+            amazon-linux-extras enable java-17-amazon-corretto
+            yum clean metadata
+            yum install -y java-17-amazon-corretto
+            
+            # Download and start the application
+            aws s3 cp s3://${DeploymentBucket}/${AppJarKey} /home/ec2-user/cloudx2025-app.jar
+            
+            # Create application service file with properly escaped environment variables
+            cat << EOF > /etc/systemd/system/cloudx-app.service
+            [Unit]
+            Description=CloudX Application
+            After=network.target
+            
+            [Service]
+            User=ec2-user
+            WorkingDirectory=/home/ec2-user
+            Environment=DB_HOST=${RDSHost}
+            Environment=DB_USER=${DBUsername}
+            Environment=DB_PASS=${DBPassword}
+            Environment=DB_NAME=${DBName}
+            Environment=S3_BUCKET=${S3BucketName}
+            Environment=SERVER_PORT=8080
+            Environment=PROJECT_NAME=${ProjectName}
+            Environment=UPLOADS_NOTIFICATION_QUEUE_URL=${UploadsNotificationQueue}
+            Environment=UPLOADS_NOTIFICATION_TOPIC_ARN=${UploadsNotificationTopic}
+            ExecStart=/usr/bin/java -jar cloudx2025-app.jar
+            SuccessExitStatus=143
+            TimeoutStopSec=10
+            Restart=on-failure
+            RestartSec=5
+            
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            
+            # Log the environment variables for debugging
+            echo "Environment variables being used:" > /home/ec2-user/env.log
+            echo "DB_HOST=${RDSHost}" >> /home/ec2-user/env.log
+            echo "DB_USER=${DBUsername}" >> /home/ec2-user/env.log
+            echo "DB_NAME=${DBName}" >> /home/ec2-user/env.log
+            echo "S3_BUCKET=${S3BucketName}" >> /home/ec2-user/env.log
+            echo "SERVER_PORT=8080" >> /home/ec2-user/env.log
+            
+            # Set permissions and start service
+            chmod 644 /etc/systemd/system/cloudx-app.service
+            systemctl daemon-reload
+            systemctl enable cloudx-app
+            systemctl start cloudx-app
+            
+            # Save logs to persistent location
+            ln -sf /var/log/messages /home/ec2-user/system.log
+            touch /home/ec2-user/app.log
+            chown ec2-user:ec2-user /home/ec2-user/app.log
+            journalctl -u cloudx-app -f > /home/ec2-user/app.log &
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub "${ProjectName}-PublicSubnetAId"
+        - Fn::ImportValue: !Sub "${ProjectName}-PublicSubnetBId"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
+      MinSize: "1"
+      MaxSize: "3"
+      DesiredCapacity: "1"
+      TargetGroupARNs:
+        - !Ref AppTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-AppInstance"
+          PropagateAtLaunch: true
+
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub "${ProjectName}-VpcId"
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: "8080"
+      HealthCheckPath: "/"
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher:
+        HttpCode: 200
+      Name: !Sub "${ProjectName}-tg"
+
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - Fn::ImportValue: !Sub "${ProjectName}-PublicSubnetAId"
+        - Fn::ImportValue: !Sub "${ProjectName}-PublicSubnetBId"
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-LoadBalancer"
+
+  AppListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  UploadsNotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${ProjectName}-UploadsNotificationQueue"
+
+  UploadsNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectName}-UploadsNotificationTopic"
+
+  UploadsNotificationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-UploadsNotificationLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SNSPublishPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref UploadsNotificationTopic
+        - PolicyName: SQSReceivePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt UploadsNotificationQueue.Arn
+
+  UploadsNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-UploadsNotificationFunction"
+      Runtime: python3.11
+      Handler: uploads_notification.lambda_handler
+      Role: !GetAtt UploadsNotificationLambdaRole.Arn
+      CodeUri:
+        Bucket: !Ref DeploymentBucket
+        Key: !Ref UploadsNotificationCodeKey
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref UploadsNotificationTopic
+      Timeout: 30
+
+  # SQS trigger for Lambda
+  UploadsNotificationLambdaTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref UploadsNotificationFunction
+      EventSourceArn: !GetAtt UploadsNotificationQueue.Arn
+      BatchSize: 10
+      Enabled: true
+
+  DataConsistencyLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-DataConsistencyLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonRDSFullAccess
+
+  DataConsistencySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for Data Consistency Lambda"
+      VpcId:
+        Fn::ImportValue: !Sub "${ProjectName}-VpcId"
+
+  RdsSecurityGroupIngressFromLambda:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId:
+        Fn::ImportValue: !Sub "${ProjectName}-RdsSecurityGroupId"
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref DataConsistencySecurityGroup
+
+  LambdaInvokeInlinePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${ProjectName}-LambdaInvokeInlinePolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !GetAtt DataConsistencyFunction.Arn
+      Roles:
+        - cloudx2025_FullAccessRoleS3
+
+  DataConsistencyLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub "${ProjectName}-DataConsistencyLayer"
+      CompatibleRuntimes:
+        - python3.11
+      Content:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref LayerKey
+
+  DataConsistencyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-DataConsistencyFunction"
+      Runtime: python3.11
+      Handler: data_consistency.lambda_handler
+      Role: !GetAtt DataConsistencyLambdaRole.Arn
+      Layers:
+        - !Ref DataConsistencyLayer
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref DataConsistencySecurityGroup
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${ProjectName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${ProjectName}-PrivateSubnetBId"
+      Environment:
+        Variables:
+          DB_HOST: !Ref RDSHost
+          DB_USER: !Ref DBUsername
+          DB_PASS: !Ref DBPassword
+          DB_NAME: !Ref DBName
+          S3_BUCKET: !Ref S3BucketName
+      CodeUri:
+        Bucket: !Ref DeploymentBucket
+        Key: !Ref DataConsistencyCodeKey
+      Events:
+        DataConsistencySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(20 minutes)
+            Name: !Sub "${ProjectName}-DataConsistencySchedule"
+            Description: "Schedule to run data consistency check every 20 minutes"
+            Input: |
+              {
+                "version": "0",
+                "id": "scheduled-event",
+                "detail-type": "ScheduledEvent",
+                "source": "aws.events",
+                "detail": {}
+              }
+        DataConsistencyApi:
+          Type: Api
+          Properties:
+            Path: /data-consistency
+            Method: post
+
+Outputs:
+  AppAutoScalingGroupName:
+    Value: !Ref AppAutoScalingGroup
+    Export:
+      Name: !Sub "${ProjectName}-AppAutoScalingGroupName"
+  AppLoadBalancerDNS:
+    Value: !GetAtt AppLoadBalancer.DNSName
+    Export:
+      Name: !Sub "${ProjectName}-AppLoadBalancerDNS"
+  UploadsNotificationQueueArn:
+    Description: "ARN of the uploads notification SQS queue"
+    Value: !GetAtt UploadsNotificationQueue.Arn
+    Export:
+      Name: !Sub "${ProjectName}-UploadsNotificationQueueArn"
+  UploadsNotificationTopicArn:
+    Description: "ARN of the uploads notification SNS topic"
+    Value: !Ref UploadsNotificationTopic
+    Export:
+      Name: !Sub "${ProjectName}-UploadsNotificationTopicArn"
+  UploadsNotificationQueueUrl:
+    Description: "URL of the uploads notification SQS queue"
+    Value: !Ref UploadsNotificationQueue
+    Export:
+      Name: !Sub "${ProjectName}-UploadsNotificationQueueUrl"

@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SAM template for testing Uploads Notification Lambda function
+Parameters:
+  ProjectName:
+    Type: String
+    Default: cloudx-2025
+    Description: Project name for resource naming
+Resources:
+  UploadsNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${ProjectName}-UploadsNotificationFunction
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      CodeUri: UploadsNotificationFunction
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN:
+            Ref: UploadsNotificationTopic
+      Timeout: 30
+      Policies:
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Fn::GetAtt:
+            - UploadsNotificationTopic
+            - TopicName
+    Metadata:
+      SamResourceId: UploadsNotificationFunction
+  UploadsNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Sub: ${ProjectName}-UploadsNotificationTopic
+  UploadsNotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: ${ProjectName}-UploadsNotificationQueue
+Outputs:
+  UploadsNotificationFunction:
+    Description: Lambda Function ARN
+    Value:
+      Fn::GetAtt:
+      - UploadsNotificationFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-UploadsNotificationFunctionArn
+  UploadsNotificationTopicArn:
+    Description: SNS Topic ARN
+    Value:
+      Ref: UploadsNotificationTopic
+    Export:
+      Name:
+        Fn::Sub: ${ProjectName}-UploadsNotificationTopicArn

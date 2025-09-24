@@ -1,0 +1,5 @@
+{
+  "UploadsNotificationFunction": {
+    "SNS_TOPIC_ARN": "arn:aws:sns:ap-south-1:518382206174:my-topic"
+  }
+}
