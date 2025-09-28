@@ -52,7 +52,7 @@ Resources:
                   - sqs:GetQueueAttributes
                 Resource: !Ref SqsQueueArn
 
-  UploadsNotificationFunction:
+  UploadsNotificationNewFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${ProjectName}-UploadsNotificationFunction"
@@ -95,7 +95,7 @@ Resources:
 Outputs:
   UploadsNotificationFunctionArn:
     Description: "ARN of the UploadsNotification Lambda function"
-    Value: !GetAtt UploadsNotificationFunction.Arn
+    Value: !GetAtt UploadsNotificationNewFunction.Arn
   S3LogsFunctionArn:
     Description: "ARN of the S3Logs Lambda function"
     Value: !GetAtt S3LogsFunction.Arn
