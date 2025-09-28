@@ -18,10 +18,10 @@ phases:
   build:
     commands:
       - echo Building jar...
-      - cd Week10/Task2
+      - pwd
       - mvn package
       - echo Packaging SAM template...
-      - cd Week10/Task2/lambda
+      - pwd
       - sam package --template-file sam-template.yaml --s3-bucket $S3_BUCKET --output-template-file sam-template-packaged.yaml
 artifacts:
   files:
