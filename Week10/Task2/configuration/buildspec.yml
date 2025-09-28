@@ -13,15 +13,13 @@ phases:
   pre_build:
     commands:
       - echo Running tests...
-      - pwd
       - mvn test
   build:
     commands:
       - echo Building jar...
-      - pwd
       - mvn package
       - echo Packaging SAM template...
-      - cd ../lambda
+      - cd lambda
       - sam package --template-file sam-template.yaml --s3-bucket $S3_BUCKET --output-template-file sam-template-packaged.yaml
 artifacts:
   files:
