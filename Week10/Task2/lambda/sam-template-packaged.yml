@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: SAM template for <ProjectName>-UploadsNotificationFunction
+Description: SAM template for Cloudx2025-UploadsNotificationFunction
 Parameters:
   ProjectName:
     Type: String
@@ -26,35 +26,35 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-        - Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-      - PolicyName: SNSPublishPolicy
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action: sns:Publish
-            Resource:
-              Ref: SnsTopicArn
-      - PolicyName: SQSReceivePolicy
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - sqs:ReceiveMessage
-            - sqs:DeleteMessage
-            - sqs:GetQueueAttributes
-            Resource:
-              Ref: SqsQueueArn
+        - PolicyName: SNSPublishPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  Ref: SnsTopicArn
+        - PolicyName: SQSReceivePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  Ref: SqsQueueArn
     Metadata:
       SamResourceId: UploadsNotificationLambdaRole
-  UploadsNotificationFunction:
+  UploadsNotificationNewFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName:
@@ -63,9 +63,9 @@ Resources:
       Handler: uploads_notification.lambda_handler
       Role:
         Fn::GetAtt:
-        - UploadsNotificationLambdaRole
-        - Arn
-      CodeUri: s3://cloudx2025-harshitmanaktala-20250720-site/163c08ceb86f18e6d6691c4abb78967e
+          - UploadsNotificationLambdaRole
+          - Arn
+      CodeUri: s3://cloudx2025-harshitmanaktala-20250720-site/0e99494e0931b3e4ef8c67fe7264c6db
       Environment:
         Variables:
           SNS_TOPIC_ARN:
@@ -80,7 +80,7 @@ Resources:
       DeploymentPreference:
         Type: AllAtOnce
         Alarms:
-        - Fn::Sub: ${ProjectName}-UploadsNotificationFunction-Alarm
+          - Fn::Sub: ${ProjectName}-UploadsNotificationFunction-Alarm
         Hooks:
           PreTraffic:
             Fn::Sub: ${ProjectName}-PreTrafficHook
@@ -89,7 +89,7 @@ Resources:
       Timeout: 30
       AutoPublishAlias: live
     Metadata:
-      SamResourceId: UploadsNotificationFunction
+      SamResourceId: UploadsNotificationNewFunction
   S3LogsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -99,9 +99,9 @@ Resources:
       Handler: s3_logs.lambda_handler
       CodeUri: s3://cloudx2025-harshitmanaktala-20250720-site/f00ff4205ff95a938d1ffd622537e747
       Policies:
-      - S3ReadPolicy:
-          BucketName:
-            Ref: S3BucketName
+        - S3ReadPolicy:
+            BucketName:
+              Ref: S3BucketName
       Timeout: 15
     Metadata:
       SamResourceId: S3LogsFunction
@@ -110,11 +110,11 @@ Outputs:
     Description: ARN of the UploadsNotification Lambda function
     Value:
       Fn::GetAtt:
-      - UploadsNotificationFunction
-      - Arn
+        - UploadsNotificationNewFunction
+        - Arn
   S3LogsFunctionArn:
     Description: ARN of the S3Logs Lambda function
     Value:
       Fn::GetAtt:
-      - S3LogsFunction
-      - Arn
+        - S3LogsFunction
+        - Arn

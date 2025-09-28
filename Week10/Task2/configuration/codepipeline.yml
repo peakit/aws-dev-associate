@@ -1,0 +1,75 @@
+metadata:
+  created: '2025-09-28T20:18:46.768000+05:30'
+  pipelineArn: arn:aws:codepipeline:ap-south-1:518382206174:cloudx2025-app-pipeline
+  updated: '2025-09-28T20:41:30.327000+05:30'
+pipeline:
+  artifactStore:
+    location: cloudx2025-harshitmanaktala-20250720-site
+    type: S3
+  name: cloudx2025-app-pipeline
+  roleArn: arn:aws:iam::518382206174:role/service-role/AWSCodePipelineServiceRole-ap-south-1-cloudx2025-app-pipeline
+  stages:
+  - actions:
+    - actionTypeId:
+        category: Source
+        owner: AWS
+        provider: CodeStarSourceConnection
+        version: '1'
+      configuration:
+        BranchName: main
+        ConnectionArn: arn:aws:codeconnections:ap-south-1:518382206174:connection/34b7c164-d4ef-4b15-8fd3-6a02f200cca2
+        DetectChanges: 'true'
+        FullRepositoryId: peakit/aws-dev-associate
+        OutputArtifactFormat: CODE_ZIP
+      inputArtifacts: []
+      name: Source
+      namespace: SourceVariables
+      outputArtifacts:
+      - name: SourceArtifact
+      region: ap-south-1
+      runOrder: 1
+    name: Source
+  - actions:
+    - actionTypeId:
+        category: Build
+        owner: AWS
+        provider: CodeBuild
+        version: '1'
+      configuration:
+        ProjectName: cloudx2025-app
+      inputArtifacts:
+      - name: SourceArtifact
+      name: Build
+      namespace: BuildVariables
+      outputArtifacts:
+      - name: BuildArtifact
+      region: ap-south-1
+      runOrder: 1
+    name: Build
+  - actions:
+    - actionTypeId:
+        category: Deploy
+        owner: AWS
+        provider: CloudFormation
+        version: '1'
+      configuration:
+        ActionMode: CREATE_UPDATE
+        Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+        ParameterOverrides: "{\n\"ProjectName\": \"cloudx2025\",\n\"S3BucketName\"\
+          : \"cloudx2025-e572f1dd-4192-4f26-98c4-442d49f1d728\",\n\"SnsTopicArn\"\
+          : \"arn:aws:sns:ap-south-1:518382206174:cloudx2025-UploadsNotificationTopic\"\
+          ,\n\"SqsQueueArn\": \"arn:aws:sqs:ap-south-1:518382206174:cloudx2025-UploadsNotificationQueue\"\
+          ,\n\"SqsQueueUrl\": \"https://sqs.ap-south-1.amazonaws.com/518382206174/cloudx2025-UploadsNotificationQueue\"\
+          \n}"
+        RoleArn: arn:aws:iam::518382206174:role/cloudformation-servicerole
+        StackName: cloudx2025-lambdastack
+        TemplatePath: BuildArtifact::sam-template-packaged.yml
+      inputArtifacts:
+      - name: BuildArtifact
+      name: Deploy
+      namespace: DeployVariables
+      outputArtifacts: []
+      region: ap-south-1
+      runOrder: 1
+    name: Deploy
+  version: 5

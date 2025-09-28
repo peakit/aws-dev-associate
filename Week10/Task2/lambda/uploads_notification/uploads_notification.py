@@ -10,7 +10,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Lambda function to process SQS messages and forward them to SNS topic.
     Triggered by SQS queue messages.
     """
-    print("Received event:", json.dumps(event, indent=2))
+    print("Processing received event:", json.dumps(event, indent=2))
     try:
         # Get SNS topic ARN from environment variable
         sns_topic_arn = os.environ['SNS_TOPIC_ARN']
