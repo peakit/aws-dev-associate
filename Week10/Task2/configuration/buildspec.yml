@@ -8,17 +8,17 @@ phases:
     commands:
       - pip install aws-sam-cli
       - echo Installing dependencies...
-      - cd ../
+      - pwd
       - mvn clean install
   pre_build:
     commands:
       - echo Running tests...
-      - cd ../
+      - pwd
       - mvn test
   build:
     commands:
       - echo Building jar...
-      - cd ../
+      - pwd
       - mvn package
       - echo Packaging SAM template...
       - cd ../lambda
