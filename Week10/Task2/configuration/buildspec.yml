@@ -8,19 +8,23 @@ phases:
     commands:
       - pip install aws-sam-cli
       - echo Installing dependencies...
+      - cd ../
       - mvn clean install
   pre_build:
     commands:
       - echo Running tests...
+      - cd ../
       - mvn test
   build:
     commands:
       - echo Building jar...
+      - cd ../
       - mvn package
       - echo Packaging SAM template...
-      - sam package --template-file template.yaml --s3-bucket $S3_BUCKET --output-template-file packaged.yaml
+      - cd ../lambda
+      - sam package --template-file sam-template.yaml --s3-bucket $S3_BUCKET --output-template-file sam-template-packaged.yaml
 artifacts:
   files:
-    - packaged.yaml
-    - target/*.jar
+    - ../lambda/sam-template-packaged.yaml
+    - ../target/*.jar
   discard-paths: yes
