@@ -20,9 +20,9 @@ phases:
       - mvn package
       - echo Packaging SAM template...
       - cd lambda
-      - sam package --template-file sam-template.yaml --s3-bucket $S3_BUCKET --output-template-file sam-template-packaged.yaml
+      - sam package --template-file sam-template.yml --s3-bucket $S3_BUCKET --output-template-file sam-template-packaged.yml
 artifacts:
   files:
-    - Week10/Task2/lambda/sam-template-packaged.yaml
+    - Week10/Task2/lambda/sam-template-packaged.yml
     - Week10/Task2/target/*.jar
   discard-paths: yes
