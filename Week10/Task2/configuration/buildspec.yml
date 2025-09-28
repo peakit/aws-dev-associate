@@ -13,7 +13,7 @@ phases:
   pre_build:
     commands:
       - echo Running tests...
-      - cd Week10/Task2
+      - pwd
       - mvn test
   build:
     commands:
@@ -21,7 +21,7 @@ phases:
       - pwd
       - mvn package
       - echo Packaging SAM template...
-      - pwd
+      - cd ../lambda
       - sam package --template-file sam-template.yaml --s3-bucket $S3_BUCKET --output-template-file sam-template-packaged.yaml
 artifacts:
   files:
