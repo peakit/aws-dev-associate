@@ -1,0 +1,26 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto17
+      python: 3.11
+    commands:
+      - pip install aws-sam-cli
+      - echo Installing dependencies...
+      - mvn clean install
+  pre_build:
+    commands:
+      - echo Running tests...
+      - mvn test
+  build:
+    commands:
+      - echo Building jar...
+      - mvn package
+      - echo Packaging SAM template...
+      - sam package --template-file template.yaml --s3-bucket $S3_BUCKET --output-template-file packaged.yaml
+artifacts:
+  files:
+    - packaged.yaml
+    - target/*.jar
+  discard-paths: yes
